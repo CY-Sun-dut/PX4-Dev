@@ -1,0 +1,5 @@
+menuconfig EXAMPLES_MAVLINK_UORB_TEST
+	bool "mavlink_uorb_test"
+	default n
+	---help---
+		Enable support for mavlink_uorb_test
