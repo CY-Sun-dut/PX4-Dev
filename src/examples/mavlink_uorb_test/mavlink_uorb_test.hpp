@@ -16,6 +16,7 @@
 #include <uORB/SubscriptionCallback.hpp>
 #include <uORB/topics/sensor_accel.h>
 #include <uORB/topics/mavlink_uorb.h>
+#include <uORB/topics/mavlink_uorb_rx.h>
 
 // 模块类对象
 // 模块作为任务出现 继承自 ModuleBase 类，其中模板类型写<模块类本身>
@@ -49,7 +50,8 @@ private:
     // Subscription - 普通的订阅消息
     // SubscriptionInterval- 周期性的订阅消息
     // SubscriptionCallbackWorkItem - 回调式的订阅消息
-	uORB::SubscriptionCallbackWorkItem _sensor_accel_sub{this, ORB_ID(sensor_accel)};
+	uORB::Subscription _sensor_accel_sub{ORB_ID(sensor_accel)};		// 订阅传感器消息
+	uORB::SubscriptionCallbackWorkItem _mavlink_uorb_rx_sub{this, ORB_ID(mavlink_uorb_rx)};	// 订阅 mavlink_uorb_rx 接收到的消息
 
 	// Publications
     // 相当于模型输出

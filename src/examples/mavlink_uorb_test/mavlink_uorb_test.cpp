@@ -32,9 +32,15 @@ bool MavlinkUorbTest::init()
 	//	return false;
 	// }
 
+	// 设置接收数据回调
+	if (!_mavlink_uorb_rx_sub.registerCallback()) {
+		PX4_ERR("callback registration failed");
+		return false;
+	}
+
 	// 也可以设置为固定频率运行，以下设置运行的时间间隔，单位为us
 	// alternatively, Run on fixed interval
-	ScheduleOnInterval(_s(1));	 // 1s interval, 1 Hz rate
+	ScheduleOnInterval(_s(2));	 // 1s interval, 1 Hz rate
 
 	return true;
 }
@@ -54,6 +60,17 @@ void MavlinkUorbTest::Run()
 	perf_count(_loop_interval_perf);
 
 	// 模块功能 TODO
+	// 在使用同一条 MAVLink 通信链路的情况下  先进行数据接收 再进行数据发送
+	// Example：读取 _mavlink_uorb_rx 接收到的消息，并打印至控制面板
+	if (_mavlink_uorb_rx_sub.updated()) {		// 检测更新
+		mavlink_uorb_rx_s msg;
+
+		if (_mavlink_uorb_rx_sub.copy(&msg)) {		// 获取数据
+			// 打印输出，可以利用类似的方法进行调试
+			PX4_INFO("[FROM MAVLINK] msg: %8.4f %8.4f %8.4f", (double)msg.accel[0], (double)msg.accel[1], (double)msg.accel[2]);
+		}
+	}
+
     // Example：读取 sensor_accel 消息，并将加速度发布到 mavlink_uorb 消息中
 	if (_sensor_accel_sub.updated()) {		// 检测更新
 		sensor_accel_s accel;
@@ -72,6 +89,8 @@ void MavlinkUorbTest::Run()
 			PX4_INFO("mavlink_uorb: %8.4f %8.4f %8.4f", (double)mavlink_uorb_data.accel[0], (double)mavlink_uorb_data.accel[1], (double)mavlink_uorb_data.accel[2]);
 		}
 	}
+
+
 
 	perf_end(_loop_perf);
 }
