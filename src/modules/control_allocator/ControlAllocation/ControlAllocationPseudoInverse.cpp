@@ -143,7 +143,7 @@ void
 ControlAllocationPseudoInverse::normalizeControlAllocationMatrix()
 {
 	if (_control_allocation_scale(0) > FLT_EPSILON) {
-		_mix.col(0) /= _control_allocation_scale(0);
+		_mix.col(0) /= _control_allocation_scale(0);		// roll 与 pitch 轴归一化参数相同
 		_mix.col(1) /= _control_allocation_scale(1);
 	}
 
@@ -177,5 +177,5 @@ ControlAllocationPseudoInverse::allocate()
 	_prev_actuator_sp = _actuator_sp;
 
 	// Allocate
-	_actuator_sp = _actuator_trim + _mix * (_control_sp - _control_trim);
+	_actuator_sp = _actuator_trim + _mix * (_control_sp - _control_trim);		// 从控制器到执行机构的映射
 }
