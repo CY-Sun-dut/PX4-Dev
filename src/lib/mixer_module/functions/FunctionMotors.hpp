@@ -36,6 +36,7 @@
 #include "FunctionProviderBase.hpp"
 
 #include <uORB/topics/actuator_servos.h>
+#include <uORB/topics/actuator_motors.h>
 
 /**
  * Functions: Motor1 ... MotorMax
@@ -49,10 +50,10 @@ public:
 	static_assert(actuator_motors_s::ACTUATOR_FUNCTION_MOTOR1 == (int)OutputFunction::Motor1, "Unexpected motor idx");
 
 	FunctionMotors(const Context &context) :
-		_topic(&context.work_item, ORB_ID(actuator_motors)),
+		_topic(&context.work_item, ORB_ID(actuator_motors)),		// 将 actuator_motors 消息与 work_item 绑定，在消息更新时就执行回调
 		_thrust_factor(context.thrust_factor)
 	{
-		for (int i = 0; i < actuator_motors_s::NUM_CONTROLS; ++i) {
+		for (int i = 0; i < actuator_motors_s::NUM_CONTROLS; ++i) {	// 初始化控制量为 NAN
 			_data.control[i] = NAN;
 		}
 	}
@@ -101,6 +102,7 @@ public:
 			}
 		}
 
+		// 折算？？？
 		for (int i = 0; i < num_values; ++i) {
 			if ((reversible & (1u << i)) == 0) {
 				if (values[i] < -FLT_EPSILON) {
@@ -117,7 +119,7 @@ public:
 	bool reversible(OutputFunction func) const override { return _data.reversible_flags & (1u << ((int)func - (int)OutputFunction::Motor1)); }
 
 private:
-	uORB::SubscriptionCallbackWorkItem _topic;
-	actuator_motors_s _data{};
-	const float &_thrust_factor;
+	uORB::SubscriptionCallbackWorkItem _topic;	// 用于绑定 uORB 信号
+	actuator_motors_s _data{};		// 存储 uORB 信号数据
+	const float &_thrust_factor;	// 推力系数
 };

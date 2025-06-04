@@ -62,6 +62,7 @@ public:
 
 	static constexpr int NUM_ROTORS_MAX = 12;
 
+	// 电机参数 几何位置配置 推力/转矩系数等
 	struct RotorGeometry {
 		matrix::Vector3f position;
 		matrix::Vector3f axis;
@@ -70,6 +71,7 @@ public:
 		int tilt_index;
 	};
 
+	// 电机组参数
 	struct Geometry {
 		RotorGeometry rotors[NUM_ROTORS_MAX];
 		int num_rotors{0};
@@ -146,8 +148,8 @@ private:
 		param_t moment_ratio;
 		param_t tilt_index;
 	};
-	ParamHandles _param_handles[NUM_ROTORS_MAX];
-	param_t _count_handle;
+	ParamHandles _param_handles[NUM_ROTORS_MAX];		// 电机参数句柄
+	param_t _count_handle;								// 电机数量句柄
 
 	Geometry _geometry{};
 };

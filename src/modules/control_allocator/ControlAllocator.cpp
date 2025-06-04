@@ -61,6 +61,7 @@ ControlAllocator::ControlAllocator() :
 	_actuator_servos_pub.advertise();
 	_actuator_servos_trim_pub.advertise();
 
+	// 初始化参数句柄
 	for (int i = 0; i < MAX_NUM_MOTORS; ++i) {
 		char buffer[17];
 		snprintf(buffer, sizeof(buffer), "CA_R%u_SLEW", i);
@@ -90,6 +91,7 @@ ControlAllocator::~ControlAllocator()
 bool
 ControlAllocator::init()
 {
+	// 订阅转矩与推力设定点消息  Control Allocation 的触发频率由前一控制模块决定
 	if (!_vehicle_torque_setpoint_sub.registerCallback()) {
 		PX4_ERR("callback registration failed");
 		return false;
@@ -124,7 +126,13 @@ ControlAllocator::parameters_updated()
 
 	// Allocation method & effectiveness source
 	// Do this first: in case a new method is loaded, it will be configured below
+	// 更新机型配置  这一函数中会配置机型如多旋翼、垂直起降等
+	// 将 _actuator_effectiveness 实例化为不同机型的 ActuatorEffectiveness 子类
+	// （父类中使用虚函数实现多态，可以使 _actuator_effectiveness 指向不同的子类实例，但只需要声明为父类）
 	bool updated = update_effectiveness_source();
+	// 更新控制分配方法  实例化 ControlAllocation 子类实例  在 _control_allocation 变量中
+	// 控制分配方法包括 伪逆 等
+	// 在更新机型配置后，Efficiency Matrix 可能会发生变化，因此必须紧跟着执行 update_allocation_method() 来保证控制分配的方法是最新的
 	update_allocation_method(updated); // must be called after update_effectiveness_source()
 
 	if (_num_control_allocation == 0) {
@@ -135,19 +143,22 @@ ControlAllocator::parameters_updated()
 		_control_allocation[i]->updateParameters();
 	}
 
-	update_effectiveness_matrix_if_needed(EffectivenessUpdateReason::CONFIGURATION_UPDATE);
+	update_effectiveness_matrix_if_needed(EffectivenessUpdateReason::CONFIGURATION_UPDATE);		// 根据更改后的配置 更新 Effectiveness Matrix
 }
 
 void
 ControlAllocator::update_allocation_method(bool force)
 {
-	AllocationMethod configured_method = (AllocationMethod)_param_ca_method.get();
+	AllocationMethod configured_method = (AllocationMethod)_param_ca_method.get();	// 根据参数获取配置的控制分配方法
 
 	if (!_actuator_effectiveness) {
 		PX4_ERR("_actuator_effectiveness null");
 		return;
 	}
 
+	// 执行控制分配方法更新的条件
+	// (1) 参数配置的方法 configured_method 与当前方法 _allocation_method_id 不同
+	// (2) 强制更新分配 force == true
 	if (_allocation_method_id != configured_method || force) {
 
 		matrix::Vector<float, NUM_ACTUATORS> actuator_sp[ActuatorEffectiveness::MAX_NUM_MATRICES];
@@ -159,7 +170,7 @@ ControlAllocator::update_allocation_method(bool force)
 				actuator_sp[i] = _control_allocation[i]->getActuatorSetpoint();
 			}
 
-			delete _control_allocation[i];
+			delete _control_allocation[i];			// 清理原有分配方法  在此之前保存执行机构设定点
 			_control_allocation[i] = nullptr;
 		}
 
@@ -174,13 +185,13 @@ ControlAllocator::update_allocation_method(bool force)
 		for (int i = 0; i < _num_control_allocation; ++i) {
 			AllocationMethod method = configured_method;
 
-			if (configured_method == AllocationMethod::AUTO) {
+			if (configured_method == AllocationMethod::AUTO) {		// 若 AUTO 表示自动选择，则根据机型配置选择控制分配方法
 				method = desired_methods[i];
 			}
 
 			switch (method) {
 			case AllocationMethod::PSEUDO_INVERSE:
-				_control_allocation[i] = new ControlAllocationPseudoInverse();
+				_control_allocation[i] = new ControlAllocationPseudoInverse();		// 定义为基类 ControlAllocation，实例化为子类 ControlAllocationPseudoInverse
 				break;
 
 			case AllocationMethod::SEQUENTIAL_DESATURATION:
@@ -192,26 +203,26 @@ ControlAllocator::update_allocation_method(bool force)
 				break;
 			}
 
-			if (_control_allocation[i] == nullptr) {
+			if (_control_allocation[i] == nullptr) {		// 若配置失败，则清空配置数量并返回错误
 				PX4_ERR("alloc failed");
 				_num_control_allocation = 0;
 
 			} else {
-				_control_allocation[i]->setNormalizeRPY(normalize_rpy[i]);
-				_control_allocation[i]->setActuatorSetpoint(actuator_sp[i]);
+				_control_allocation[i]->setNormalizeRPY(normalize_rpy[i]);		// 设置归一化
+				_control_allocation[i]->setActuatorSetpoint(actuator_sp[i]);	// 恢复原有的执行机构设定点
 			}
 		}
 
-		_allocation_method_id = configured_method;
+		_allocation_method_id = configured_method;		// 更新当前所使用的 allocation method id
 	}
 }
 
 bool
 ControlAllocator::update_effectiveness_source()
 {
-	const EffectivenessSource source = (EffectivenessSource)_param_ca_airframe.get();
+	const EffectivenessSource source = (EffectivenessSource)_param_ca_airframe.get();	// 根据参数读取机型
 
-	if (_effectiveness_source_id != source) {
+	if (_effectiveness_source_id != source) {		// 若机型与当前使用的不同 则尝试更新
 
 		// try to instanciate new effectiveness source
 		ActuatorEffectiveness *tmp = nullptr;
@@ -268,10 +279,10 @@ ControlAllocator::update_effectiveness_source()
 		}
 
 		// Replace previous source with new one
-		if (tmp == nullptr) {
+		if (tmp == nullptr) {								// 若配置新机型失败，则仍更改机型为当前使用的
 			// It did not work, forget about it
 			PX4_ERR("Actuator effectiveness init failed");
-			_param_ca_airframe.set((int)_effectiveness_source_id);
+			_param_ca_airframe.set((int)_effectiveness_source_id);	// 更改设定参数为当前机型 _effectiveness_source_id
 
 		} else {
 			// Swap effectiveness sources
@@ -291,6 +302,7 @@ ControlAllocator::update_effectiveness_source()
 void
 ControlAllocator::Run()
 {
+	// 异常处理
 	if (should_exit()) {
 		_vehicle_torque_setpoint_sub.unregisterCallback();
 		_vehicle_thrust_setpoint_sub.unregisterCallback();
@@ -305,17 +317,18 @@ ControlAllocator::Run()
 	ScheduleDelayed(50_ms);
 #endif
 
+	// 参数更新仅在未解锁的情况下启用  这其中参数包括 机型配置 分配方法 等
 	// Check if parameters have changed
-	if (_parameter_update_sub.updated() && !_armed) {
+	if (_parameter_update_sub.updated() && !_armed) {		// 若有参数更新且未解锁？
 		// clear update
 		parameter_update_s param_update;
 		_parameter_update_sub.copy(&param_update);
 
-		if (_handled_motor_failure_bitmask == 0) {
+		if (_handled_motor_failure_bitmask == 0) {			// 若无电机损坏再执行参数更新
 			// We don't update the geometry after an actuator failure, as it could lead to unexpected results
 			// (e.g. a user could add/remove motors, such that the bitmask isn't correct anymore)
 			updateParams();
-			parameters_updated();
+			parameters_updated();		// 执行参数更新
 		}
 	}
 
@@ -365,10 +378,10 @@ ControlAllocator::Run()
 
 	// Run allocator on torque changes
 	if (_vehicle_torque_setpoint_sub.update(&vehicle_torque_setpoint)) {
-		_torque_sp = matrix::Vector3f(vehicle_torque_setpoint.xyz);
+		_torque_sp = matrix::Vector3f(vehicle_torque_setpoint.xyz);		// 若检测到转矩设定值变化 读取新的设定值
 
-		do_update = true;
-		_timestamp_sample = vehicle_torque_setpoint.timestamp_sample;
+		do_update = true;				// 设定更新
+		_timestamp_sample = vehicle_torque_setpoint.timestamp_sample;	// 采样时间戳 由话题发布方决定
 
 	}
 
@@ -400,7 +413,7 @@ ControlAllocator::Run()
 		c[0](5) = _thrust_sp(2);
 
 		if (_num_control_allocation > 1) {
-			if (_vehicle_torque_setpoint1_sub.copy(&vehicle_torque_setpoint)) {
+			if (_vehicle_torque_setpoint1_sub.copy(&vehicle_torque_setpoint)) {		// 重新读取？
 				c[1](0) = vehicle_torque_setpoint.xyz[0];
 				c[1](1) = vehicle_torque_setpoint.xyz[1];
 				c[1](2) = vehicle_torque_setpoint.xyz[2];
@@ -417,11 +430,21 @@ ControlAllocator::Run()
 
 			_control_allocation[i]->setControlSetpoint(c[i]);
 
+			// 调试输出
+			if (_debug_counter % 1000 == 0) {
+				matrix::Vector<float, NUM_AXES> control_setpoint = _control_allocation[i]->getControlSetpoint();
+				PX4_INFO("[CTL Allocator] num_control_allocation: %d", _num_control_allocation);
+				PX4_INFO("[CTL Allocator] Torque setpoint: %f %f %f",
+					(double)control_setpoint(0), (double)control_setpoint(1), (double)control_setpoint(2));
+				PX4_INFO("[CTL Allocator] Thrust setpoint: %f %f %f",
+					(double)control_setpoint(3), (double)control_setpoint(4), (double)control_setpoint(5));
+			}
+
 			// Do allocation
 			_control_allocation[i]->allocate();
-			_actuator_effectiveness->allocateAuxilaryControls(dt, i, _control_allocation[i]->_actuator_sp); //flaps and spoilers
+			_actuator_effectiveness->allocateAuxilaryControls(dt, i, _control_allocation[i]->_actuator_sp); 	//flaps and spoilers  对旋翼为空
 			_actuator_effectiveness->updateSetpoint(c[i], i, _control_allocation[i]->_actuator_sp,
-								_control_allocation[i]->getActuatorMin(), _control_allocation[i]->getActuatorMax());
+								_control_allocation[i]->getActuatorMin(), _control_allocation[i]->getActuatorMax());	// 对旋翼为空
 
 			if (_has_slew_rate) {
 				_control_allocation[i]->applySlewRateLimit(dt);
@@ -445,6 +468,9 @@ ControlAllocator::Run()
 
 		_last_status_pub = now;
 	}
+
+	// 调试循环计数器 +1
+	_debug_counter = (_debug_counter % 1000) + 1;
 
 	perf_end(_loop_perf);
 }
@@ -634,6 +660,7 @@ ControlAllocator::publish_control_allocator_status(int matrix_index)
 	_control_allocator_status_pub[matrix_index].publish(control_allocator_status);
 }
 
+// 发布执行机构的控制信号
 void
 ControlAllocator::publish_actuator_controls()
 {
@@ -647,35 +674,40 @@ ControlAllocator::publish_actuator_controls()
 
 	actuator_motors.reversible_flags = _param_r_rev.get();
 
-	int actuator_idx = 0;
-	int actuator_idx_matrix[ActuatorEffectiveness::MAX_NUM_MATRICES] {};
+	int actuator_idx = 0;	// 用于标记 执行机构序号
+	int actuator_idx_matrix[ActuatorEffectiveness::MAX_NUM_MATRICES] {};	// 用于标记 每一类执行机构序号  初始化为 0
 
 	uint32_t stopped_motors = _actuator_effectiveness->getStoppedMotors() | _handled_motor_failure_bitmask;
 
 	// motors
+	// _num_actuators[0] 表示电机的数量
 	int motors_idx;
 
+	// NUM_CONTROLS 是控制量数量
 	for (motors_idx = 0; motors_idx < _num_actuators[0] && motors_idx < actuator_motors_s::NUM_CONTROLS; motors_idx++) {
-		int selected_matrix = _control_allocation_selection_indexes[actuator_idx];
+		int selected_matrix = _control_allocation_selection_indexes[actuator_idx];			// 从 actuator_id 到矩阵索引（对应的执行机构组别，或者说是共用一个分配矩阵的执行机构组）
 		float actuator_sp = _control_allocation[selected_matrix]->getActuatorSetpoint()(actuator_idx_matrix[selected_matrix]);
+		// _control_allocation 存放所有的控制分配，其中的一个元素对应一组执行机构，保存自身的控制量设定点
 		actuator_motors.control[motors_idx] = PX4_ISFINITE(actuator_sp) ? actuator_sp : NAN;
 
+		// 检测是否停机
 		if (stopped_motors & (1u << motors_idx)) {
 			actuator_motors.control[motors_idx] = NAN;
 		}
 
-		++actuator_idx_matrix[selected_matrix];
-		++actuator_idx;
+		++actuator_idx_matrix[selected_matrix];		// 在对应类型的执行机构索引 +1  用于遍历
+		++actuator_idx;		// 执行机构索引 +1
 	}
 
+	// 将其余通道控制量赋值为 NAN  关闭控制输出
 	for (int i = motors_idx; i < actuator_motors_s::NUM_CONTROLS; i++) {
 		actuator_motors.control[i] = NAN;
 	}
 
-	_actuator_motors_pub.publish(actuator_motors);
+	_actuator_motors_pub.publish(actuator_motors);		// 发布电机控制量
 
 	// servos
-	if (_num_actuators[1] > 0) {
+	if (_num_actuators[1] > 0) {		// 首先检查是否使用舵机
 		int servos_idx;
 
 		for (servos_idx = 0; servos_idx < _num_actuators[1] && servos_idx < actuator_servos_s::NUM_CONTROLS; servos_idx++) {

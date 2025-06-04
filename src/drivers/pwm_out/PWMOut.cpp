@@ -56,6 +56,7 @@ PWMOut::~PWMOut()
 
 bool PWMOut::update_pwm_out_state(bool on)
 {
+	// 未初始化 执行初始化操作
 	if (on && !_pwm_initialized && _pwm_mask != 0) {
 
 		for (int timer = 0; timer < MAX_IO_TIMERS; ++timer) {
@@ -131,12 +132,12 @@ bool PWMOut::updateOutputs(bool stop_motors, uint16_t outputs[MAX_ACTUATORS],
 	/* output to the servos */
 	if (_pwm_initialized) {
 		for (size_t i = 0; i < num_outputs; i++) {
-			if (!_mixing_output.isFunctionSet(i)) {
+			if (!_mixing_output.isFunctionSet(i)) {					// mixing_output 用于配置要输出的 PWM 信号
 				// do not run any signal on disabled channels
 				outputs[i] = 0;
 			}
 
-			if (_pwm_mask & (1 << i)) {
+			if (_pwm_mask & (1 << i)) {				// _pwm_mask 用标志位的方式配置通道是否使用
 				up_pwm_servo_set(i, outputs[i]);
 			}
 		}

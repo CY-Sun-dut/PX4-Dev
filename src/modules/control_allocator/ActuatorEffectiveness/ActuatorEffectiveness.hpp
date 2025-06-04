@@ -97,6 +97,7 @@ public:
 		TRANSITION_FF_TO_HF = 3
 	};
 
+	// selected_matrix 是指向所选的矩阵添加执行机构，也就是说在一个效率矩阵对应的一组执行机构中增加一个新的
 	struct Configuration {
 		/**
 		 * Add an actuator to the selected matrix, returning the index, or -1 on error

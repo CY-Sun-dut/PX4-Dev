@@ -222,6 +222,7 @@ set(msg_files
 	Wind.msg
 	YawEstimatorStatus.msg
 	MavlinkUorb.msg
+	MavlinkUorbRx.msg
 )
 list(SORT msg_files)
 

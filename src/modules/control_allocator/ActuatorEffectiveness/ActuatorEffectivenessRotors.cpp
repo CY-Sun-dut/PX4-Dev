@@ -51,15 +51,15 @@ ActuatorEffectivenessRotors::ActuatorEffectivenessRotors(ModuleParams *parent, A
 {
 	for (int i = 0; i < NUM_ROTORS_MAX; ++i) {
 		char buffer[17];
-		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_PX", i);
-		_param_handles[i].position_x = param_find(buffer);
-		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_PY", i);
-		_param_handles[i].position_y = param_find(buffer);
+		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_PX", i);		// 提取电机位置参数  存储于 CA_ROTORx_PX, CA_ROTORx_PY, ...
+		_param_handles[i].position_x = param_find(buffer);			// _param_handles 相当于管理电机参数句柄的接口
+		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_PY", i);		// param_find 函数得到的是参数的句柄（ID），而不是参数的值
+		_param_handles[i].position_y = param_find(buffer);			// 得到参数句柄后，可以使用 param_get 函数来获取参数的值
 		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_PZ", i);
 		_param_handles[i].position_z = param_find(buffer);
 
-		if (_axis_config == AxisConfiguration::Configurable) {
-			snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_AX", i);
+		if (_axis_config == AxisConfiguration::Configurable) {		// 提取电机轴向参数  存储于 CA_ROTORx_AX, CA_ROTORx_AY, CA_ROTORx_AZ
+			snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_AX", i);	// 电机轴向参数是表明轴向方向的单位向量
 			_param_handles[i].axis_x = param_find(buffer);
 			snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_AY", i);
 			_param_handles[i].axis_y = param_find(buffer);
@@ -67,19 +67,20 @@ ActuatorEffectivenessRotors::ActuatorEffectivenessRotors(ModuleParams *parent, A
 			_param_handles[i].axis_z = param_find(buffer);
 		}
 
-		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_CT", i);
+		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_CT", i);		// 设定电机推理系数
 		_param_handles[i].thrust_coef = param_find(buffer);
 
-		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_KM", i);
+		snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_KM", i);		// 设定电机反扭矩系数
 		_param_handles[i].moment_ratio = param_find(buffer);
 
+		// 是否支持倾斜控制
 		if (_tilt_support) {
 			snprintf(buffer, sizeof(buffer), "CA_ROTOR%u_TILT", i);
 			_param_handles[i].tilt_index = param_find(buffer);
 		}
 	}
 
-	_count_handle = param_find("CA_ROTOR_COUNT");
+	_count_handle = param_find("CA_ROTOR_COUNT");	// 获取表征电机数量的句柄
 
 	updateParams();
 }
@@ -95,19 +96,19 @@ void ActuatorEffectivenessRotors::updateParams()
 		return;
 	}
 
-	_geometry.num_rotors = math::min(NUM_ROTORS_MAX, (int)count);
+	_geometry.num_rotors = math::min(NUM_ROTORS_MAX, (int)count);		// 更新无人机机型的电机数量
 
 	for (int i = 0; i < _geometry.num_rotors; ++i) {
 		Vector3f &position = _geometry.rotors[i].position;
-		param_get(_param_handles[i].position_x, &position(0));
+		param_get(_param_handles[i].position_x, &position(0));			// 更新电机位置参数 存储在 position 向量中
 		param_get(_param_handles[i].position_y, &position(1));
 		param_get(_param_handles[i].position_z, &position(2));
 
 		Vector3f &axis = _geometry.rotors[i].axis;
 
-		switch (_axis_config) {
+		switch (_axis_config) {									// 根据轴向配置的类型 更新轴向信息
 		case AxisConfiguration::Configurable:
-			param_get(_param_handles[i].axis_x, &axis(0));
+			param_get(_param_handles[i].axis_x, &axis(0));		// 若轴向可配置，则获取相应的轴向参数
 			param_get(_param_handles[i].axis_y, &axis(1));
 			param_get(_param_handles[i].axis_z, &axis(2));
 			break;
@@ -117,17 +118,17 @@ void ActuatorEffectivenessRotors::updateParams()
 			break;
 
 		case AxisConfiguration::FixedUpwards:
-			axis = Vector3f(0.f, 0.f, -1.f);
+			axis = Vector3f(0.f, 0.f, -1.f);		// 电机轴固定向上  z 轴负方向对应向上
 			break;
 		}
 
-		param_get(_param_handles[i].thrust_coef, &_geometry.rotors[i].thrust_coef);
-		param_get(_param_handles[i].moment_ratio, &_geometry.rotors[i].moment_ratio);
+		param_get(_param_handles[i].thrust_coef, &_geometry.rotors[i].thrust_coef);			// 获取电机推力系数
+		param_get(_param_handles[i].moment_ratio, &_geometry.rotors[i].moment_ratio);		// 获取电机反扭矩系数
 
 		if (_tilt_support) {
 			int32_t tilt_param{0};
 			param_get(_param_handles[i].tilt_index, &tilt_param);
-			_geometry.rotors[i].tilt_index = tilt_param - 1;
+			_geometry.rotors[i].tilt_index = tilt_param - 1;			// 更新电机倾斜参数
 
 		} else {
 			_geometry.rotors[i].tilt_index = -1;
@@ -135,18 +136,19 @@ void ActuatorEffectivenessRotors::updateParams()
 	}
 }
 
+// 根据 configuration 配置相应的效率矩阵 （添加一组执行机构）
 bool
 ActuatorEffectivenessRotors::addActuators(Configuration &configuration)
 {
-	if (configuration.num_actuators[(int)ActuatorType::SERVOS] > 0) {
+	if (configuration.num_actuators[(int)ActuatorType::SERVOS] > 0) {		// 配置电机过程中，不应当出现舵机
 		PX4_ERR("Wrong actuator ordering: servos need to be after motors");
 		return false;
 	}
 
 	int num_actuators = computeEffectivenessMatrix(_geometry,
-			    configuration.effectiveness_matrices[configuration.selected_matrix],
-			    configuration.num_actuators_matrix[configuration.selected_matrix]);
-	configuration.actuatorsAdded(ActuatorType::MOTORS, num_actuators);
+			    configuration.effectiveness_matrices[configuration.selected_matrix],	// 当前选中的效率矩阵（可以认为是选中的执行机构组）
+			    configuration.num_actuators_matrix[configuration.selected_matrix]);		// 当前选中的效率矩阵的执行机构数量
+	configuration.actuatorsAdded(ActuatorType::MOTORS, num_actuators);					// 表明已向系统中添加 num_actuators 个电机 （更新数量）
 	return true;
 }
 
@@ -202,22 +204,24 @@ ActuatorEffectivenessRotors::computeEffectivenessMatrix(const Geometry &geometry
 		}
 
 		// Compute thrust generated by this rotor
-		matrix::Vector3f thrust = ct * axis;
+		matrix::Vector3f thrust = ct * axis;			// axis 三维中的轴向量 单位向量
 
 		// Compute moment generated by this rotor
-		matrix::Vector3f moment = ct * position.cross(axis) - ct * km * axis;
+		matrix::Vector3f moment = ct * position.cross(axis) - ct * km * axis;		// 力产生的力矩 + 电机反扭距
 
 		// Fill corresponding items in effectiveness matrix
 		for (size_t j = 0; j < 3; j++) {
-			effectiveness(j, i + actuator_start_index) = moment(j);
+			effectiveness(j, i + actuator_start_index) = moment(j);			// 效率矩阵  控制分配矩阵是他的逆（伪逆）
 			effectiveness(j + 3, i + actuator_start_index) = thrust(j);
 		}
 
+		// 判断偏航是否由其他方法/系统控制
 		if (geometry.yaw_by_differential_thrust_disabled) {
 			// set yaw effectiveness to 0 if yaw is controlled by other means (e.g. tilts)
 			effectiveness(2, i + actuator_start_index) = 0.f;
 		}
 
+		// 判断是否为三维推力（对于四旋翼仅为 z 轴推力 对于固定翼为 x 轴推力）
 		if (geometry.three_dimensional_thrust_disabled) {
 			// Special case tiltrotor: instead of passing a 3D thrust vector (that would mostly have a x-component in FW, and z in MC),
 			// pass the vector magnitude as z-component, plus the collective tilt. Passing 3D thrust plus tilt is not feasible as they
@@ -230,7 +234,7 @@ ActuatorEffectivenessRotors::computeEffectivenessMatrix(const Geometry &geometry
 		}
 	}
 
-	return num_actuators;
+	return num_actuators;		// 理论上应为 geometry.num_rotors
 }
 
 uint32_t ActuatorEffectivenessRotors::updateAxisFromTilts(const ActuatorEffectivenessTilts &tilts,
@@ -265,7 +269,7 @@ Vector3f ActuatorEffectivenessRotors::tiltedAxis(float tilt_angle, float tilt_di
 	return Dcmf{Eulerf{0.f, -tilt_angle, tilt_direction}} * axis;
 }
 
-uint32_t ActuatorEffectivenessRotors::getMotors() const
+uint32_t ActuatorEffectivenessRotors::getMotors() const		// 获取所有电机掩码 对应位为 1
 {
 	uint32_t motors = 0;
 
@@ -276,7 +280,7 @@ uint32_t ActuatorEffectivenessRotors::getMotors() const
 	return motors;
 }
 
-uint32_t ActuatorEffectivenessRotors::getUpwardsMotors() const
+uint32_t ActuatorEffectivenessRotors::getUpwardsMotors() const		// 获取所有方向向上的电机掩码
 {
 	uint32_t upwards_motors = 0;
 
