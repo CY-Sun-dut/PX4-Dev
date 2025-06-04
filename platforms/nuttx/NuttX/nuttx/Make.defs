@@ -74,15 +74,15 @@ ifneq (, $(findstring CYGWIN, $(shell uname)))
   ARCHXXINCLUDES := $(call cygwin_to_windows_paths,$(ARCHXXINCLUDES))
 endif
 
-CC = ${CMAKE_C_COMPILER}
-CXX = ${CMAKE_CXX_COMPILER}
-CPP = ${CMAKE_C_COMPILER} -E
-LD = ${CMAKE_LD}
-STRIP = ${CMAKE_STRIP} --strip-unneeded
-AR = ${CMAKE_AR} rcs
-NM = ${CMAKE_NM}
-OBJCOPY = ${CMAKE_OBJCOPY}
-OBJDUMP = ${CMAKE_OBJDUMP}
+CC = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-gcc
+CXX = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-g++
+CPP = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-gcc -E
+LD = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-ld
+STRIP = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-strip --strip-unneeded
+AR = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-gcc-ar rcs
+NM = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-gcc-nm
+OBJCOPY = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-objcopy
+OBJDUMP = /opt/gcc-arm-none-eabi-9-2020-q2-update/bin/arm-none-eabi-objdump
 
 ARCHCCVERSION = $(shell $(CC) -v 2>&1 | sed -n '/^gcc version/p' | sed -e 's/^gcc version \([0-9\.]\)/\1/g' -e 's/[-\ ].*//g' -e '1q')
 ARCHCCMAJOR = $(shell echo $(ARCHCCVERSION) | cut -d'.' -f1)
@@ -128,7 +128,7 @@ endif
 
 CFLAGS = $(ARCHINCLUDES) \
 	-std=gnu11 \
-	${CMAKE_C_FLAGS} \
+	-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
 	$(FLAGS) \
 	-Wno-bad-function-cast \
 	-Wno-float-equal \
@@ -143,12 +143,12 @@ CFLAGS = $(ARCHINCLUDES) \
 	-Wno-old-style-declaration \
 	-Wno-sign-compare \
 	-Wno-type-limits \
-	${CMAKE_C_COMP_DEP_FLAGS}
+	
 
 CXXFLAGS = $(ARCHXXINCLUDES) \
 	-std=c++14 \
 	-nostdinc++ \
-	${CMAKE_CXX_FLAGS} \
+	-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
 	$(FLAGS) \
 	-fcheck-new \
 	-fno-builtin \
@@ -168,15 +168,15 @@ LIBEXT = .a
 EXEEXT =
 
 define COMPILE
-	$(Q) ${CCACHE_PROGRAM} $(CC) -c $(CFLAGS) $($(strip $1)_CFLAGS) $1 -o $2
+	$(Q)  $(CC) -c $(CFLAGS) $($(strip $1)_CFLAGS) $1 -o $2
 endef
 
 define COMPILEXX
-	$(Q) ${CCACHE_PROGRAM} $(CXX) -c $(CXXFLAGS) $($(strip $1)_CXXFLAGS) $1 -o $2
+	$(Q)  $(CXX) -c $(CXXFLAGS) $($(strip $1)_CXXFLAGS) $1 -o $2
 endef
 
 define ASSEMBLE
-	$(Q) ${CCACHE_PROGRAM} $(CC) -c $(AFLAGS) $1 $($(strip $1)_AFLAGS) -o $2
+	$(Q)  $(CC) -c $(AFLAGS) $1 $($(strip $1)_AFLAGS) -o $2
 endef
 
 define ARCHIVE
