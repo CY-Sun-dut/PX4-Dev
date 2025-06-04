@@ -1,9 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 graph a MAVLink log file
 Andrew Tridgell August 2011
 '''
-from __future__ import print_function
 from builtins import input
 from builtins import range
 
@@ -20,10 +19,7 @@ try:
 except:
     print("WARNING: Numpy missing, mathematical notation will not be supported.")
 
-if sys.version_info[0] >= 3:
-    text_types = frozenset([str,])
-else:
-    text_types = frozenset([unicode, str])
+text_types = frozenset([str,])
 
 # cope with rename of raw_input in python3
 try:

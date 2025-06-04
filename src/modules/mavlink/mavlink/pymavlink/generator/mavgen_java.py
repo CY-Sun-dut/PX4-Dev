@@ -1,12 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 Parse a MAVLink protocol XML file and generate a Java implementation
 
 Copyright Andrew Tridgell 2011
 Released under GNU GPL version 3 or later
 '''
-from __future__ import print_function
-
 from builtins import range
 from builtins import object
 
@@ -34,10 +32,20 @@ package com.MAVLink.enums;
  * ${description}
  */
 public class ${name} {
-${{entry:   public static final int ${name} = ${value}; /* ${description} |${{param:${description}| }} */
-}}
-}
-            ''', en)
+''', en)
+
+        for entry in en.entry:
+            if entry.value > 2147483647:
+                t.write(f, '''
+   public static final long ${name} = ${value}L; /* ${description} |${{param:${description}| }} */
+''', entry)
+            else:
+                t.write(f, '''
+   public static final int ${name} = ${value}; /* ${description} |${{param:${description}| }} */
+''', entry)
+
+        t.write(f, '''
+}''')
         f.close()
 
 

@@ -1,11 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 '''
 fit best estimate of magnetometer offsets, diagonals, off-diagonals, cmot and scaling using WMM target
 '''
-# to allow print to file with both python 2 and 3
-from __future__ import print_function
-
 import sys, time, os, math, copy
 
 from argparse import ArgumentParser
@@ -121,7 +118,6 @@ def get_yaw(ATT,MAG,BAT,CTUN,c):
     headY = mag.y * dcm_matrix.c.z - mag.z * dcm_matrix.c.y
     headX = mag.x * cos_pitch_sq - dcm_matrix.c.x * (mag.y * dcm_matrix.c.y + mag.z * dcm_matrix.c.z)
 
-    global declination
     yaw = math.degrees(math.atan2(-headY,headX)) + declination
     if yaw < 0:
         yaw += 360
@@ -129,7 +125,6 @@ def get_yaw(ATT,MAG,BAT,CTUN,c):
 
 def expected_field(ATT, yaw):
     '''return expected magnetic field for attitude'''
-    global earth_field
 
     roll = ATT.Roll
     pitch = ATT.Pitch
@@ -181,6 +176,9 @@ def wmm_error(p):
 
     return ret
 
+def printProgress(x):
+    print("offsets:", x[0:3], " scale:", x[3])
+
 def fit_WWW():
     from scipy import optimize
 
@@ -219,7 +217,7 @@ def fit_WWW():
             for i in range(3):
                 bounds.append((-args.max_cmot,args.max_cmot))
 
-    (p,err,iterations,imode,smode) = optimize.fmin_slsqp(wmm_error, p, bounds=bounds, full_output=True, iter=args.iter)
+    (p,err,iterations,imode,smode) = optimize.fmin_slsqp(wmm_error, p, bounds=bounds, full_output=True, iter=args.iter, callback=printProgress)
     if imode != 0:
         print("Fit failed: %s" % smode)
         sys.exit(1)
@@ -271,7 +269,6 @@ def remove_offsets(MAG, BAT, CTUN, c):
     return True
 
 def param_name(short_name, index):
-    global new_param_format
     if new_param_format:
         return "COMPASS%s_%s" % (index, short_name)
     if index == 1:

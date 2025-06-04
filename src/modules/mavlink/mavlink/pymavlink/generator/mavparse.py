@@ -1,11 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 mavlink python parse functions
 
 Copyright Andrew Tridgell 2011
 Released under GNU GPL version 3 or later
 '''
-from __future__ import print_function
 from builtins import range
 from builtins import object
 
@@ -33,7 +32,7 @@ class MAVParseError(Exception):
         return self.message
 
 class MAVField(object):
-    def __init__(self, name, type, print_format, xml, description='', enum='', display='', units='', instance=False):
+    def __init__(self, name, type, print_format, xml, description='', enum='', display='', units='', multiplier='', instance=False):
         self.name = name
         self.name_upper = name.upper()
         self.description = description
@@ -41,6 +40,7 @@ class MAVField(object):
         self.enum = enum
         self.display = display
         self.units = units
+        self.multiplier = multiplier
         self.omit_arg = False
         self.const_value = None
         self.print_format = print_format
@@ -141,7 +141,7 @@ class MAVType(object):
         return len(self.fields[:self.extensions_start])
 
 class MAVEnumParam(object):
-    def __init__(self, index, description='', label='', units='', enum='', increment='', minValue='', maxValue='', reserved=False, default=''):
+    def __init__(self, index, description='', label='', units='', enum='', increment='', minValue='', maxValue='', reserved=False, default='', multiplier=''):
         self.index = index
         self.description = description
         self.label = label
@@ -152,6 +152,7 @@ class MAVEnumParam(object):
         self.maxValue = maxValue
         self.reserved = reserved
         self.default = default
+        self.multiplier = multiplier
         if self.reserved and not self.default:
             self.default = '0'
         self.set_description(description)
@@ -256,8 +257,9 @@ class MAVXML(object):
                 units = attrs.get('units', '')
                 if units:
                     units = '[' + units + ']'
+                multiplier = attrs.get('multiplier', '')
                 instance = attrs.get('instance', False)
-                new_field = MAVField(attrs['name'], attrs['type'], print_format, self, enum=enum, display=display, units=units, instance=instance)
+                new_field = MAVField(attrs['name'], attrs['type'], print_format, self, enum=enum, display=display, units=units, multiplier=multiplier, instance=instance)
                 if self.message[-1].extensions_start is None or self.allow_extensions:
                     self.message[-1].fields.append(new_field)
             elif in_element == "mavlink.enums.enum":
@@ -286,6 +288,14 @@ class MAVXML(object):
                     has_location = False
                 if type(has_location) != bool:
                     raise MAVParseError("invalid has_location value %s" % has_location)
+
+                # check bitmask value
+                if self.enum[-1].bitmask:
+                    # values should always be a power of 2.  Py3.10
+                    # has value.bit_count()
+                    if bin(value).count("1") != 1:
+                        print(f"{attrs['name']} has invalid values (bitmask must have powers of 2)")
+
                 # append the new entry
                 self.enum[-1].entry.append(MAVEnumEntry(attrs['name'], value, '', False, autovalue, self.filename, p.CurrentLineNumber, has_location=has_location))
             elif in_element == "mavlink.enums.enum.entry.param":
@@ -296,7 +306,7 @@ class MAVXML(object):
                                                         enum=attrs.get('enum', ''), increment=attrs.get('increment', ''), 
                                                         minValue=attrs.get('minValue', ''), 
                                                         maxValue=attrs.get('maxValue', ''), default=attrs.get('default', '0'), 
-                                                        reserved=attrs.get('reserved', False) ))
+                                                        reserved=attrs.get('reserved', False), multiplier=attrs.get('multiplier','') ))
 
         def is_target_system_field(m, f):
             if f.name == 'target_system':
@@ -368,8 +378,6 @@ class MAVXML(object):
             for m in self.message:
                 if m.id <= 255:
                     m2.append(m)
-                else:
-                    print("Ignoring MAVLink2 message %s" % m.name)
             self.message = m2
 
         for m in self.message:
@@ -555,6 +563,21 @@ def check_duplicates(xml):
                     return True
                 enummap[s1] = enummap[s2] = "%s.%s = %s @ %s:%u" % (enum.name, entry.name, entry.value, entry.origin_file, entry.origin_line)
 
+    return False
+
+def check_missing_enum(xml):
+    '''check for enum fields pointing to invalid enums'''
+
+    all_enums = set()
+    for x in xml:
+        for enum in x.enum:
+            all_enums.add(enum.name)
+    for x in xml:
+        for m in x.message:
+            for f in m.fields:
+                if f.enum and f.enum not in all_enums:
+                    print('Enum %s in %s.%s does not exist' % (f.enum, m.name, f.name))
+                    return True
     return False
 
 

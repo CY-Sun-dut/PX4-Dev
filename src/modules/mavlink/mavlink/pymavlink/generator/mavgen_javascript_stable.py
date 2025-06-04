@@ -1,12 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 parse a MAVLink protocol XML file and generate a Node.js javascript module implementation
 
 Based on original work Copyright Andrew Tridgell 2011
 Released under GNU GPL version 3 or later
 '''
-from __future__ import print_function
-
 from builtins import range
 
 import os
@@ -49,7 +47,7 @@ ${MAVHEAD} = function(){};
 ${MAVHEAD}.x25Crc = function(buffer, crcIN) {
 
     var bytes = buffer;
-    var crcOUT = crcIN || 0xffff;
+    var crcOUT = crcIN ===  undefined ? 0xffff : crcIN;
     _.each(bytes, function(e) {
         var tmp = e ^ (crcOUT & 0xff);
         tmp = (tmp ^ (tmp << 4)) & 0xff;
@@ -570,7 +568,7 @@ unpacked = jspack.Unpack('cBBBBB', msgbuf.slice(0, 6));
     messageChecksum = ${MAVHEAD}.x25Crc([decoder.crc_extra], messageChecksum);
     
     if ( receivedChecksum != messageChecksum ) {
-        throw new Error('invalid MAVLink CRC in msgID ' +msgId+ ', got 0x' + receivedChecksum + ' checksum, calculated payload checksum as 0x'+messageChecksum );
+        throw new Error('invalid MAVLink CRC in msgID ' +msgId+ ', got ' + receivedChecksum + ' checksum, calculated payload checksum as '+messageChecksum );
     }
 
     var paylen = jspack.CalcLength(decoder.format);

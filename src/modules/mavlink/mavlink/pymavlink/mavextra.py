@@ -1,11 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 useful extra functions for use by mavlink clients
 
 Copyright Andrew Tridgell 2011
 Released under GNU GPL version 3 or later
 '''
-from __future__ import print_function
 from __future__ import absolute_import
 from builtins import object
 from builtins import sum as builtin_sum
@@ -217,7 +216,6 @@ average_data = {}
 
 def average(var, key, N):
     '''average over N points'''
-    global average_data
     if not key in average_data:
         average_data[key] = [var]*N
         return var
@@ -230,7 +228,6 @@ derivative_data = {}
 
 def second_derivative_5(var, key):
     '''5 point 2nd derivative'''
-    global derivative_data
     from . import mavutil
     tnow = mavutil.mavfile_global.timestamp
 
@@ -249,7 +246,6 @@ def second_derivative_5(var, key):
 
 def second_derivative_9(var, key):
     '''9 point 2nd derivative'''
-    global derivative_data
     from . import mavutil
     tnow = mavutil.mavfile_global.timestamp
 
@@ -271,7 +267,8 @@ lowpass_data = {}
 
 def lowpass(var, key, factor):
     '''a simple lowpass filter'''
-    global lowpass_data
+    if isnan(var):
+        return None
     if not key in lowpass_data:
         lowpass_data[key] = var
     else:
@@ -288,7 +285,6 @@ lowpass_hz_data = {}
 
 def lowpassHz(var, key, sample_rate_hz, cutoff_hz):
     '''a simple lowpass filter with specified frequency'''
-    global lowpass_hz_data
     alpha = lpalpha(sample_rate_hz, cutoff_hz)
     if not key in lowpass_hz_data:
         lowpass_hz_data[key] = var
@@ -300,7 +296,6 @@ last_diff = {}
 
 def diff(var, key):
     '''calculate differences between values'''
-    global last_diff
     ret = 0
     if not key in last_diff:
         last_diff[key] = var
@@ -313,7 +308,8 @@ last_delta = {}
 
 def delta(var, key, tusec=None):
     '''calculate slope'''
-    global last_delta
+    if isnan(var):
+        return None
     if tusec is not None:
         tnow = tusec * 1.0e-6
     else:
@@ -335,7 +331,6 @@ last_sum = {}
 
 def sum(var, key):
     '''sum variable'''
-    global last_sum
     ret = 0
     if not key in last_sum:
         last_sum[key] = 0
@@ -346,7 +341,6 @@ last_integral = {}
 
 def integral(var, key, timeus):
     '''integrate variable'''
-    global last_integral
     ret = 0
     if not key in last_integral:
         last_integral[key] = (0,timeus)
@@ -360,7 +354,6 @@ def integral(var, key, timeus):
 
 def delta_angle(var, key, tusec=None):
     '''calculate slope of an angle'''
-    global last_delta
     if tusec is not None:
         tnow = tusec * 1.0e-6
     else:
@@ -429,7 +422,10 @@ def pitch_estimate(RAW_IMU, GPS_RAW_INT=None,ATTITUDE=None, SENSOR_OFFSETS=None,
 def rotation(ATTITUDE):
     '''return the current DCM rotation matrix'''
     r = Matrix3()
-    r.from_euler(ATTITUDE.roll, ATTITUDE.pitch, ATTITUDE.yaw)
+    if hasattr(ATTITUDE, 'roll'):
+        r.from_euler(ATTITUDE.roll, ATTITUDE.pitch, ATTITUDE.yaw)
+    else:
+        r.from_euler(radians(ATTITUDE.Roll), radians(ATTITUDE.Pitch), radians(ATTITUDE.Yaw))
     return r
 
 def mag_rotation(RAW_IMU, inclination, declination):
@@ -513,35 +509,44 @@ def get_origin():
 
 def get_lat_lon_alt(MSG):
     '''gets lat and lon in radians and alt in meters from a position msg'''
-    if hasattr(MSG, 'Lat'):
+    if hasattr(MSG, 'Lat') and hasattr(MSG, 'Lng'):
         lat = radians(MSG.Lat)
         lon = radians(MSG.Lng)
+        alt = MSG.Alt
+    elif hasattr(MSG, 'Lat') and hasattr(MSG, 'Lon'):
+        lat = radians(MSG.Lat)
+        lon = radians(MSG.Lon)
         alt = MSG.Alt
     elif hasattr(MSG, 'cog'):
         lat = radians(MSG.lat)*1.0e-7
         lon = radians(MSG.lon)*1.0e-7
         alt = MSG.alt*0.001
-    elif hasattr(MSG,'lat'):
+    elif hasattr(MSG,'lat') and hasattr(MSG,'lon'):
         lat = radians(MSG.lat)
         lon = radians(MSG.lon)
         alt = MSG.alt*0.001
+    elif hasattr(MSG,'lat') and hasattr(MSG,'lng'):
+        lat = radians(MSG.lat)
+        lon = radians(MSG.lng)
+        alt = MSG.alt*0.001
     elif hasattr(MSG, 'PN'):
         # origin relative position from EKF
-        global ORGN
-        if ORGN is None:
-            ORGN = get_origin()
-        if ORGN is None:
-            return None
-        (lat,lon) = gps_offset(ORGN.Lat, ORGN.Lng, MSG.PN, MSG.PE)
+        (lat,lon,alt) = ekf1_pos(MSG)
         lat = radians(lat)
         lon = radians(lon)
-        alt = ORGN.Alt - MSG.PD
     else:
         return None
     return (lat, lon, alt)
 
+
 def _distance_two(MSG1, MSG2, horizontal=True):
-    '''distance between two points'''
+    '''
+    Return the distance between two points in metres
+    Calculated as the great-circle distance using 'haversine’ formula
+    (Ref: http://www.movable-type.co.uk/scripts/latlong.html)
+    Uses the globally-average earth radius value of 6371km
+    '''
+    # get_lat_lon_alt returns radians - so no need to convert here
     (lat1, lon1, alt1) = get_lat_lon_alt(MSG1)
     (lat2, lon2, alt2) = get_lat_lon_alt(MSG2)
     dLat = lat2 - lat1
@@ -743,17 +748,23 @@ def gps_velocity_body(GPS_RAW_INT, ATTITUDE):
                                     GPS_RAW_INT.vel*0.01*sin(radians(GPS_RAW_INT.cog*0.01)),
                                     -tan(ATTITUDE.pitch)*GPS_RAW_INT.vel*0.01)
 
-def earth_accel(RAW_IMU,ATTITUDE):
+def earth_accel(IMU,ATT):
     '''return earth frame acceleration vector'''
-    r = rotation(ATTITUDE)
-    accel = Vector3(RAW_IMU.xacc, RAW_IMU.yacc, RAW_IMU.zacc) * 9.81 * 0.001
+    r = rotation(ATT)
+    if hasattr(IMU, 'xacc'):
+        accel = Vector3(IMU.xacc, IMU.yacc, IMU.zacc) * 9.81 * 0.001
+    else:
+        accel = Vector3(IMU.AccX, IMU.AccY, IMU.AccZ)
     return r * accel
 
-def earth_gyro(RAW_IMU,ATTITUDE):
+def earth_gyro(IMU,ATT):
     '''return earth frame gyro vector'''
-    r = rotation(ATTITUDE)
-    accel = Vector3(degrees(RAW_IMU.xgyro), degrees(RAW_IMU.ygyro), degrees(RAW_IMU.zgyro)) * 0.001
-    return r * accel
+    r = rotation(ATT)
+    if hasattr(IMU, 'xgyro'):
+        gyro = Vector3(IMU.xgyro, IMU.ygyro, IMU.zgyro) * degrees(0.001)
+    else:
+        gyro = Vector3(IMU.GyrX, IMU.GyrY, IMU.GyrZ)
+    return r * gyro
 
 def airspeed_energy_error(NAV_CONTROLLER_OUTPUT, VFR_HUD):
     '''return airspeed energy error matching APM internals
@@ -1030,7 +1041,7 @@ def distance_gps2(GPS, GPS2):
         return None
     return distance_two(GPS, GPS2)
 
-
+# SI base unit for 1 Rgeo / equatorial radius
 radius_of_earth = 6378100.0 # in meters
 
 def wrap_valid_longitude(lon):
@@ -1070,15 +1081,14 @@ def ekf1_pos(EKF1):
   global ekf_origin
   from . import mavutil
   self = mavutil.mavfile_global
-  if getattr(EKF1,'C',0) != 0:
-      return None
   if ekf_origin is None:
       if not 'ORGN' in self.messages:
           return None
       ekf_origin = self.messages['ORGN']
       (ekf_origin.Lat, ekf_origin.Lng) = (ekf_origin.Lat, ekf_origin.Lng)
   (lat,lon) = gps_offset(ekf_origin.Lat, ekf_origin.Lng, EKF1.PE, EKF1.PN)
-  return (lat, lon)
+  alt = ekf_origin.Alt - EKF1.PD
+  return (lat, lon, alt)
 
 def quat_to_euler(q):
   '''
@@ -1315,6 +1325,7 @@ def interpolate_table(table, latitude_deg, longitude_deg):
     value = ((latitude_deg - min_lat) / SAMPLING_RES) * (data_max - data_min) + data_min
     return value
 
+earth_declination = None
 
 '''
 calculate magnetic field intensity and orientation, interpolating in tables
@@ -1336,17 +1347,14 @@ def get_mag_field_ef(latitude_deg, longitude_deg):
     declination_deg = interpolate_table(declination_table, latitude_deg, longitude_deg)
     inclination_deg = interpolate_table(inclination_table, latitude_deg, longitude_deg)
 
+    global earth_declination
+    earth_declination = declination_deg
+
     return [declination_deg, inclination_deg, intensity_gauss]
-    
-earth_field = None
-earth_declination = None
+
 
 def expected_earth_field_lat_lon(lat, lon):
     '''return expected magnetic field for a location'''
-    global earth_field
-    if earth_field is not None:
-        return earth_field
-
     field_var = get_mag_field_ef(lat, lon)
     mag_ef = Vector3(field_var[2]*1000.0, 0.0, 0.0)
     R = Matrix3()
@@ -1355,13 +1363,8 @@ def expected_earth_field_lat_lon(lat, lon):
     earth_field = mag_ef
     return earth_field
 
-def expected_earth_field(GPS):
-    '''return expected magnetic field for a location'''
-    global earth_field
-    global earth_declination
-    if earth_field is not None:
-        return earth_field
-
+def get_lat_lon_status(GPS):
+    '''get lat, lon and status from a GPS message'''
     if hasattr(GPS,'fix_type'):
         gps_status = GPS.fix_type
         lat = GPS.lat*1.0e-7
@@ -1370,23 +1373,20 @@ def expected_earth_field(GPS):
         gps_status = GPS.Status
         lat = GPS.Lat
         lon = GPS.Lng
+    return (lat, lon, gps_status)
+
+def expected_earth_field(GPS):
+    '''return expected magnetic field for a location'''
+    (lat, lon, gps_status) = get_lat_lon_status(GPS)
 
     if gps_status < 3:
         return Vector3(0,0,0)
-    field_var = get_mag_field_ef(lat, lon)
-    earth_declination = field_var[0]
-    mag_ef = Vector3(field_var[2]*1000.0, 0.0, 0.0)
-    R = Matrix3()
-    R.from_euler(0.0, -radians(field_var[1]), radians(field_var[0]))
-    mag_ef = R * mag_ef
-    earth_field = mag_ef
-    return earth_field
+    return expected_earth_field_lat_lon(lat, lon)
+
 
 def expected_mag(GPS,ATT,roll_adjust=0,pitch_adjust=0,yaw_adjust=0):
     '''return expected magnetic field for a location and attitude'''
-    global earth_field
-
-    expected_earth_field(GPS)
+    earth_field = expected_earth_field(GPS)
     if earth_field is None:
         return Vector3(0,0,0)
 
@@ -1408,9 +1408,7 @@ def expected_mag(GPS,ATT,roll_adjust=0,pitch_adjust=0,yaw_adjust=0):
 
 def expected_mag_latlon(lat,lon,ATT,roll_adjust=0,pitch_adjust=0,yaw_adjust=0):
     '''return expected magnetic field for a location and attitude'''
-    global earth_field
-
-    expected_earth_field_lat_lon(lat,lon)
+    earth_field = expected_earth_field_lat_lon(lat,lon)
     if earth_field is None:
         return Vector3(0,0,0)
 
@@ -1443,8 +1441,11 @@ def mag_yaw(GPS,ATT,MAG):
     headY = mag_y * dcm_matrix.c.z - mag_z * dcm_matrix.c.y
     headX = mag_x * cos_pitch_sq - dcm_matrix.c.x * (mag_y * dcm_matrix.c.y + mag_z * dcm_matrix.c.z)
 
-    global earth_declination
-    heading = degrees(atan2(-headY,headX)) + earth_declination
+    # we need the declination too
+    (lat, lon, gps_status) = get_lat_lon_status(GPS)
+    field = get_mag_field_ef(lat, lon)
+    declination = field[0]
+    heading = degrees(atan2(-headY,headX)) + declination
     if heading < 0:
         heading += 360
     return heading
@@ -1467,8 +1468,7 @@ def expected_mag_yaw(GPS,ATT,MAG,roll_adjust=0,pitch_adjust=0,yaw_adjust=0):
 
 def earth_field_error(GPS,NKF2):
     '''return vector error in earth field estimate'''
-    global earth_field
-    expected_earth_field(GPS)
+    earth_field = expected_earth_field(GPS)
     if earth_field is None:
         return Vector3(0,0,0)
     ef = Vector3(NKF2.MN,NKF2.ME,NKF2.MD)
@@ -1494,7 +1494,12 @@ def airspeed_estimate(GLOBAL_POSITION_INT,WIND):
 
 
 def distance_from(GPS_RAW1, lat, lon):
-    '''distance from a given location'''
+    '''
+    Return the distance from a given location in meters
+    Calculated as the great-circle distance using 'haversine’ formula
+    (Ref: http://www.movable-type.co.uk/scripts/latlong.html)
+    Uses the globally-average earth radius value of 6371km
+    '''
     if hasattr(GPS_RAW1, 'Lat'):
         lat1 = radians(GPS_RAW1.Lat)
         lon1 = radians(GPS_RAW1.Lng)
@@ -1517,9 +1522,19 @@ def distance_from(GPS_RAW1, lat, lon):
     return ground_dist
 
 def distance_lat_lon(lat1, lon1, lat2, lon2):
-    '''distance between two points'''
-    dLat = radians(lat2) - radians(lat1)
-    dLon = radians(lon2) - radians(lon1)
+    '''
+    Return the distance between two points in metres
+    Calculated as the great-circle distance using 'haversine’ formula
+    (Ref: http://www.movable-type.co.uk/scripts/latlong.html)
+    Uses the globally-average earth radius value of 6371km
+    '''
+    lat1 = radians(lat1)
+    lon1 = radians(lon1)
+    lat2 = radians(lat2)
+    lon2 = radians(lon2)
+
+    dLat = lat2 - lat1
+    dLon = lon2 - lon1
 
     a = sin(0.5*dLat)**2 + sin(0.5*dLon)**2 * cos(lat1) * cos(lat2)
     c = 2.0 * atan2(sqrt(a), sqrt(1.0-a))
@@ -1551,16 +1566,8 @@ def sim_body_rates(SIM):
 
 def reset_state_data():
     '''reset state data, used on log rewind'''
-    global average_data
-    global derivative_data
-    global lowpass_data
-    global last_diff
-    global last_delta
     global first_fix
     global dcm_state
-    global earth_field
-    global last_sum
-    global last_integral
     average_data.clear()
     derivative_data.clear()
     lowpass_data.clear()
@@ -1569,7 +1576,6 @@ def reset_state_data():
     last_integral.clear()
     first_fix = None
     dcm_state = None
-    earth_field = None
 
 # terrain functions, using MAVProxy elevation module
 EleModel = None
@@ -1649,3 +1655,16 @@ def mm_curr(RCOU,BAT,PWM_MIN,PWM_MAX,Mfirst,Mlast):
         command = voltage*max(pwm - PWM_MIN,0)/(PWM_MAX-PWM_MIN)
         total_curr += command**2
     return total_curr
+
+def RotateMag(MAG,rotation):
+    '''rotate a MAG message by rotation enumeration'''
+    v = Vector3(MAG.MagX,MAG.MagY,MAG.MagZ)
+    return v.rotate_by_id(rotation)
+
+def feet(meters):
+    '''convert value from meters to feet'''
+    return meters/0.3048
+
+def knots(mps):
+    '''convert value from m/s to knots'''
+    return mps/0.51444

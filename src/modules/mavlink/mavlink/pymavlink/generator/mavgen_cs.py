@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 parse a MAVLink protocol XML file and generate a C# implementation
 
@@ -214,6 +214,8 @@ def generate_message_enums(f, xml):
             if hasattr(fe, "deprecated") and fe.deprecated is True:
                 fe.name = '''[Obsolete]
         %s''' % fe.name
+            for p in fe.param:
+                p.description = cleanText(p.description)
             
     t.write(f, '''
     ${{enum:

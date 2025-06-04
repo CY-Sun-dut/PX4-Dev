@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # vector3 and rotation matrix classes
 # This follows the conventions in the ArduPilot code,
@@ -22,8 +22,6 @@
 
 '''rotation matrix class
 '''
-from __future__ import print_function
-
 from math import sin, cos, sqrt, asin, atan2, pi, acos, radians
 
 
@@ -138,14 +136,12 @@ class Vector3(object):
 
     def rotate_by_id(self, rot_id):
         '''rotate a vector using a rotation enum ID'''
-        global rotations
         if rot_id >= len(rotations):
             return None
         return rotations[rot_id].r * self
 
     def rotate_by_inverse_id(self, rot_id):
         '''rotate a vector using a inverse rotation enum ID'''
-        global rotations
         if rot_id >= len(rotations):
             return None
         return rotations[rot_id].rt * self
@@ -337,6 +333,51 @@ class Matrix3(object):
         self.a += temp_matrix.a
         self.b += temp_matrix.b
         self.c += temp_matrix.c
+
+    def rotate_yaw(self, yrad):
+        '''rotate the matrix by a given amount in-place on yaw axis'''
+        m2 = Matrix3()
+        m2.from_euler(0,0,yrad)
+        m2 = self * m2
+        self.a = m2.a
+        self.b = m2.b
+        self.c = m2.c
+
+    def rotate_pitch(self, prad):
+        '''rotate the matrix by a given amount in-place on pitch axis'''
+        m2 = Matrix3()
+        m2.from_euler(0,prad,0)
+        m2 = self * m2
+        self.a = m2.a
+        self.b = m2.b
+        self.c = m2.c
+
+    def rotate_roll(self, rrad):
+        '''rotate the matrix by a given amount in-place on roll axis'''
+        m2 = Matrix3()
+        m2.from_euler(rrad,0,0)
+        m2 = self * m2
+        self.a = m2.a
+        self.b = m2.b
+        self.c = m2.c
+
+    def rotate_321(self, ryad, prad, yrad):
+        '''rotate the matrix by a given amount in-place on 3 axes with 321 ordering'''
+        m2 = Matrix3()
+        m2.from_euler(ryad,prad,yrad)
+        m2 = self * m2
+        self.a = m2.a
+        self.b = m2.b
+        self.c = m2.c
+
+    def rotate_312(self, ryad, prad, yrad):
+        '''rotate the matrix by a given amount in-place on 3 axes with 312 ordering'''
+        m2 = Matrix3()
+        m2.from_euler312(ryad,prad,yrad)
+        m2 = self * m2
+        self.a = m2.a
+        self.b = m2.b
+        self.c = m2.c
 
     def normalize(self):
         '''re-normalise a rotation matrix'''
