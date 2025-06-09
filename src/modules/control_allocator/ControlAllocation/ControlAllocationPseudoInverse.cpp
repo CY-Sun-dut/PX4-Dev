@@ -40,6 +40,7 @@
  */
 
 #include "ControlAllocationPseudoInverse.hpp"
+#include <px4_platform_common/log.h>
 
 void
 ControlAllocationPseudoInverse::setEffectivenessMatrix(
@@ -66,6 +67,7 @@ ControlAllocationPseudoInverse::updatePseudoInverse()
 
 		normalizeControlAllocationMatrix();
 		_mix_update_needed = false;
+		PX4_INFO("Test Update");
 	}
 }
 
@@ -130,6 +132,7 @@ ControlAllocationPseudoInverse::updateControlAllocationMatrixScale()
 			}
 		}
 
+		// 按 Allocation Matrix 的列取均值归一化（仅计算非零值）
 		if (num_non_zero_thrust > 0) {
 			_control_allocation_scale(3 + axis_idx) = norm_sum / num_non_zero_thrust;
 
@@ -156,6 +159,8 @@ ControlAllocationPseudoInverse::normalizeControlAllocationMatrix()
 		_mix.col(4) /= _control_allocation_scale(4);
 		_mix.col(5) /= _control_allocation_scale(5);
 	}
+
+	// 归一化后的分配矩阵 列非零元的均值为 1 （若机型对称，元素也为1）
 
 	// Set all the small elements to 0 to avoid issues
 	// in the control allocation algorithms

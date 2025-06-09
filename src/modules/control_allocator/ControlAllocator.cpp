@@ -102,6 +102,11 @@ ControlAllocator::init()
 		return false;
 	}
 
+	if (!_manual_control_setpoint_sub.registerCallback()) {
+		PX4_ERR("callback registration failed");
+		return false;
+	}
+
 #ifndef ENABLE_LOCKSTEP_SCHEDULER // Backup schedule would interfere with lockstep
 	ScheduleDelayed(50_ms);
 #endif
@@ -143,7 +148,8 @@ ControlAllocator::parameters_updated()
 		_control_allocation[i]->updateParameters();
 	}
 
-	update_effectiveness_matrix_if_needed(EffectivenessUpdateReason::CONFIGURATION_UPDATE);		// 根据更改后的配置 更新 Effectiveness Matrix
+	update_effectiveness_matrix_if_needed(EffectivenessUpdateReason::CONFIGURATION_UPDATE);
+	// 根据更改后的配置 更新 Effectiveness Matrix
 }
 
 void
@@ -217,8 +223,9 @@ ControlAllocator::update_allocation_method(bool force)
 	}
 }
 
-bool
-ControlAllocator::update_effectiveness_source()
+// 每次更新参数时会调用 effectiveness 更新
+// 会重新绑定机型，重新实例化 AllocationEffectiveness
+bool ControlAllocator::update_effectiveness_source()
 {
 	const EffectivenessSource source = (EffectivenessSource)_param_ca_airframe.get();	// 根据参数读取机型
 
@@ -257,7 +264,7 @@ ControlAllocator::update_effectiveness_source()
 			tmp = new ActuatorEffectivenessFixedWing(this);
 			break;
 
-		case EffectivenessSource::MOTORS_6DOF: // just a different UI from MULTIROTOR
+		case EffectivenessSource::MOTORS_6DOF: 				// just a different UI from MULTIROTOR
 			tmp = new ActuatorEffectivenessUUV(this);
 			break;
 
@@ -373,6 +380,7 @@ ControlAllocator::Run()
 	const float dt = math::constrain(((now - _last_run) / 1e6f), 0.0002f, 0.02f);
 
 	bool do_update = false;
+	// bool update_manual_control = false;
 	vehicle_torque_setpoint_s vehicle_torque_setpoint;
 	vehicle_thrust_setpoint_s vehicle_thrust_setpoint;
 
@@ -396,6 +404,47 @@ ControlAllocator::Run()
 		}
 	}
 
+	// 处理手动输入
+	manual_control_setpoint_s manual_control_setpoint;
+	if (_manual_control_setpoint_sub.update(&manual_control_setpoint)) {	// 获取手动输入
+			// update_manual_control = true;
+			// 右手控制
+			// manual_control_pitch = (manual_control_setpoint.pitch + 1.f) / 2.f;		// 调整为 0 - 1 表示前进
+			// manual_control_roll = manual_control_setpoint.roll;		// 调整为 -1 - 1 （默认） 表示左右
+			// 左手控制
+			// manual_control_pitch = manual_control_setpoint.throttle;		// 调整为 0 - 1 表示前进
+			// manual_control_roll = manual_control_setpoint.yaw;		// 调整为 -1 - 1 （默认） 表示左右
+
+			// 配置摇杆输入
+			manual_control_pitch = (manual_control_setpoint.pitch + 1.f) / 2.f;			// 范围 0 - 1
+			manual_control_roll = manual_control_setpoint.roll;							// 范围 -1 - 1
+			manual_control_throttle = (manual_control_setpoint.throttle + 1.f) / 2.f; 	// 范围 0 - 1
+			manual_control_yaw = manual_control_setpoint.yaw;							// 范围 -1 - 1
+			// PX4_INFO("Manual Input: pitch = %.2f, throttle = %.2f, roll = %.2f, yaw = %.2f",
+			// 	(double)manual_control_pitch, (double)manual_control_throttle, (double)manual_control_roll, (double)manual_control_yaw);
+	}
+
+	// 处理船的驱动模式
+	vehicle_command_s vehicle_command;
+	if (_vehicle_commands_sub.update(&vehicle_command)) {
+		switch ((int)vehicle_command.param2) {
+			case 1:
+				boat_mode = (int)BoatMode::DIFF;	// 差速
+				break;
+			case 7:
+				boat_mode = (int)BoatMode::DIRECT;	// 方向操控
+				break;
+			default:
+				boat_mode = (int)BoatMode::DIFF;	// 默认差速
+				break;
+		}
+		PX4_INFO("Boat Mode: %d", boat_mode);
+	}
+
+	// 若检测到 setpoint 发生更新 则执行 allocation
+	// 包括：1. 检测电机是否失效（异常处理）
+	// 		2. 更新效率矩阵（非外部触发）
+	// 		3. 计算新的控制分配
 	if (do_update) {
 		_last_run = now;
 
@@ -411,6 +460,41 @@ ControlAllocator::Run()
 		c[0](3) = _thrust_sp(0);
 		c[0](4) = _thrust_sp(1);
 		c[0](5) = _thrust_sp(2);
+
+		// 根据 CA_AIRCRAFT_MD 修改推力及转矩输出
+		if (_param_ca_aircraft_mode.get() == (int32_t)AircraftMode::MULTIROTOR) {
+			// 设置 thrust 前两个通道输出为 0，封锁船桨输出
+			c[0](3) = 0.f;
+			c[0](4) = 0.f;
+			manual_control_pitch = 0.f;
+			manual_control_roll = 0.f;
+		}
+		else if (_param_ca_aircraft_mode.get() == (int32_t)AircraftMode::BOAT) {
+			// 封锁旋翼输出
+			c[0](0) = 0.f;
+			c[0](1) = 0.f;
+			c[0](2) = 0.f;
+			c[0](5) = 0.f;
+
+			// 船桨根据 uORB 消息分配输出
+			// 分配方式根据船的驱动模式确定
+			switch (boat_mode) {
+				case (int)BoatMode::DIRECT:		// 方向摇杆
+					c[0](3) = manual_control_pitch;
+					c[0](4) = manual_control_roll;
+					break;
+				case (int)BoatMode::DIFF:		// 差速
+				default:
+					matrix::Matrix<float, NUM_AXES, NUM_ACTUATORS> _effectiveness = _control_allocation[0]->getEffectivenessMatrix();
+					matrix::Vector2<float> thrust(_effectiveness(3,4), _effectiveness(3,5));
+					matrix::Vector2<float> torque(_effectiveness(4,4), _effectiveness(4,5));
+					c[0](3) = (thrust(0) * manual_control_pitch + thrust(1) * manual_control_throttle) * _control_allocation[0]->_control_allocation_scale(3);
+					c[0](4) = (torque(0) * manual_control_pitch + torque(1) * manual_control_throttle) * _control_allocation[0]->_control_allocation_scale(4);
+					PX4_INFO("Get Effectiveness Matrix: thrust1 = %.2f, thrust2 = %.2f, torque1 = %.2f, torque2 = %.2f",
+						(double)thrust(0), (double)thrust(1), (double)torque(0), (double)torque(1));
+			}
+
+		}
 
 		if (_num_control_allocation > 1) {
 			if (_vehicle_torque_setpoint1_sub.copy(&vehicle_torque_setpoint)) {		// 重新读取？
@@ -478,7 +562,7 @@ ControlAllocator::Run()
 void
 ControlAllocator::update_effectiveness_matrix_if_needed(EffectivenessUpdateReason reason)
 {
-	ActuatorEffectiveness::Configuration config{};
+	ActuatorEffectiveness::Configuration config{};		// config selected_matrix 没有赋值，因为
 
 	if (reason == EffectivenessUpdateReason::NO_EXTERNAL_UPDATE
 	    && hrt_elapsed_time(&_last_effectiveness_update) < 100_ms) { // rate-limit updates
@@ -487,6 +571,8 @@ ControlAllocator::update_effectiveness_matrix_if_needed(EffectivenessUpdateReaso
 
 	if (_actuator_effectiveness->getEffectivenessMatrix(config, reason)) {
 		_last_effectiveness_update = hrt_absolute_time();
+
+		PX4_INFO("[Control Allocator] Configuration: Selected Matrix %d", config.selected_matrix);
 
 		memcpy(_control_allocation_selection_indexes, config.matrix_selection_indexes,
 		       sizeof(_control_allocation_selection_indexes));

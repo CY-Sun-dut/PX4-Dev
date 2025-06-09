@@ -7,6 +7,18 @@ module_name: Control Allocation
 parameters:
     - group: Geometry
       definitions:
+        CA_AIRCRAFT_MD:
+            description:
+                short: Aircraft mode
+                long: |
+                  Choose the fly mode of the aircraft.
+                  Include the multirotor mode and the boat mode.
+            type: enum
+            values:
+                0: Multirotor mode
+                1: Boat mode
+            default: 0
+
         CA_AIRFRAME:
             description:
                 short: Airframe selection

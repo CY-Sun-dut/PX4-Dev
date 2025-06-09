@@ -76,11 +76,11 @@ void LandDetector::start()
 void LandDetector::Run()
 {
 	// push backup schedule
-	ScheduleDelayed(50_ms);
+	ScheduleDelayed(50_ms);			// 相当于单片机中断重新配置定时器
 
 	perf_begin(_cycle_perf);
 
-	if (_parameter_update_sub.updated() || (_land_detected.timestamp == 0)) {
+	if (_parameter_update_sub.updated() || (_land_detected.timestamp == 0)) {		// 初始化 或 参数更新
 		parameter_update_s param_update;
 		_parameter_update_sub.copy(&param_update);
 

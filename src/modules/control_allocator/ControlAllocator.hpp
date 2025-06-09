@@ -77,6 +77,8 @@
 #include <uORB/topics/vehicle_thrust_setpoint.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/failure_detector_status.h>
+#include <uORB/topics/manual_control_setpoint.h>
+#include <uORB/topics/vehicle_command.h>
 
 class ControlAllocator : public ModuleBase<ControlAllocator>, public ModuleParams, public px4::ScheduledWorkItem
 {
@@ -211,8 +213,31 @@ private:
 		(ParamInt<px4::params::CA_AIRFRAME>) _param_ca_airframe,
 		(ParamInt<px4::params::CA_METHOD>) _param_ca_method,
 		(ParamInt<px4::params::CA_FAILURE_MODE>) _param_ca_failure_mode,
-		(ParamInt<px4::params::CA_R_REV>) _param_r_rev
+		(ParamInt<px4::params::CA_R_REV>) _param_r_rev,
+		(ParamInt<px4::params::CA_AIRCRAFT_MD>) _param_ca_aircraft_mode			// 新增区分飞行器模式标志
 	)
+
+	/******************** 用户自定义部分 *******************/
+	// 飞行模式标志
+	enum class AircraftMode {
+		MULTIROTOR = 0,
+		BOAT
+	};
+
+	// 订阅手动控制消息
+	uORB::SubscriptionCallbackWorkItem _manual_control_setpoint_sub{this, ORB_ID(manual_control_input)};
+	uORB::Subscription _vehicle_commands_sub{ORB_ID(vehicle_command)};
+	float manual_control_pitch = 0.f;
+	float manual_control_roll = 0.f;
+	float manual_control_throttle = 0.f;
+	float manual_control_yaw = 0.f;
+
+	enum class BoatMode {
+		DIFF = 1,				// 差速
+		DIRECT = 2				// 方向摇杆
+	};
+
+	uint8_t boat_mode = (int)BoatMode::DIFF;	// 设置船驱动模式 默认为1
 
 	// 调试用
 	uint64_t _debug_counter{0};

@@ -150,6 +150,12 @@ private:
 	};
 	ParamHandles _param_handles[NUM_ROTORS_MAX];		// 电机参数句柄
 	param_t _count_handle;								// 电机数量句柄
+	// param_t _ca_aircraft_mode;
 
 	Geometry _geometry{};
+
+	DEFINE_PARAMETERS(
+		(ParamInt<px4::params::CA_AIRCRAFT_MD>) _ca_aircraft_md   /**< example parameter */
+	)
+
 };

@@ -64,9 +64,13 @@ int ActuatorEffectiveness::Configuration::addActuator(ActuatorType type, const m
 	return num_actuators_matrix[selected_matrix]++;		// 更新当前矩阵的执行机构数量
 }
 
+// 更新 configuration
+// 更新 actuator 对应效率矩阵序号
+// 更新 type 类的执行机构数量（MOTOR SERVO 实际为整型数据，对应数据索引)
+// 更新当前效率矩阵对应的执行机构数量 num_actuators_matrix
 void ActuatorEffectiveness::Configuration::actuatorsAdded(ActuatorType type, int count)
 {
-	int total_count = totalNumActuators();
+	int total_count = totalNumActuators();		// 已分配的 actuator 总数
 
 	for (int i = 0; i < count; ++i) {
 		matrix_selection_indexes[i + total_count] = selected_matrix;

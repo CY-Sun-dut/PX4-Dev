@@ -81,6 +81,7 @@ ActuatorEffectivenessRotors::ActuatorEffectivenessRotors(ModuleParams *parent, A
 	}
 
 	_count_handle = param_find("CA_ROTOR_COUNT");	// 获取表征电机数量的句柄
+	// _ca_aircraft_mode = param_find("CA_AIRCRAFT_MD");
 
 	updateParams();
 }
@@ -134,6 +135,13 @@ void ActuatorEffectivenessRotors::updateParams()
 			_geometry.rotors[i].tilt_index = -1;
 		}
 	}
+
+	// int32_t _aircraft_mode = 0;
+	// if (param_get(_ca_aircraft_mode, &_aircraft_mode) != 0)
+	PX4_INFO("Get aircraft mode: %d", (int)_ca_aircraft_md.get());
+	// else
+		// PX4_INFO("Get aircraft mode failed");
+
 }
 
 // 根据 configuration 配置相应的效率矩阵 （添加一组执行机构）
@@ -152,8 +160,10 @@ ActuatorEffectivenessRotors::addActuators(Configuration &configuration)
 	return true;
 }
 
-int
-ActuatorEffectivenessRotors::computeEffectivenessMatrix(const Geometry &geometry,
+// 更新 configuration 中的 effectiveness 矩阵
+// 添加所有 geometry 中的执行机构
+// actuator_start_index 表示新增的执行机构在所有执行机构中起始的序号
+int ActuatorEffectivenessRotors::computeEffectivenessMatrix(const Geometry &geometry,
 		EffectivenessMatrix &effectiveness, int actuator_start_index)
 {
 	int num_actuators = 0;
@@ -210,7 +220,7 @@ ActuatorEffectivenessRotors::computeEffectivenessMatrix(const Geometry &geometry
 		matrix::Vector3f moment = ct * position.cross(axis) - ct * km * axis;		// 力产生的力矩 + 电机反扭距
 
 		// Fill corresponding items in effectiveness matrix
-		for (size_t j = 0; j < 3; j++) {
+		for (size_t j = 0; j < 3; j++) {		// 三个轴向
 			effectiveness(j, i + actuator_start_index) = moment(j);			// 效率矩阵  控制分配矩阵是他的逆（伪逆）
 			effectiveness(j + 3, i + actuator_start_index) = thrust(j);
 		}
@@ -232,6 +242,40 @@ ActuatorEffectivenessRotors::computeEffectivenessMatrix(const Geometry &geometry
 			effectiveness(1 + 3, i + actuator_start_index) = 0.f;
 			effectiveness(2 + 3, i + actuator_start_index) = -ct;
 		}
+
+		// 判断是否为水平驱动电机
+		if (i >= 4) {			// 假定4个之后为水平驱动电机
+			unsigned int index = i;
+			for (size_t j = 0; j < 3; j++) {
+				effectiveness(j, i + actuator_start_index) = 0;					// 水平电机不产生纵向推力与转矩
+				effectiveness(j + 3, i + actuator_start_index) = 0;
+
+				if (j == 0) {
+					effectiveness(j + 3, i + actuator_start_index) = ct;		// 推力
+				} else if (j == 1) {
+					effectiveness(j + 3, i + actuator_start_index) = - ct * position(1);		// 转矩
+				}
+
+			}
+			PX4_INFO("Set the aux rotor %d, with the effectiveness row:", index);
+			PX4_INFO("%.2f, %.2f, %.2f, %.2f, %.2f, %.2f", (double)effectiveness(0, i + actuator_start_index),
+														   (double)effectiveness(1, i + actuator_start_index),
+														   (double)effectiveness(2, i + actuator_start_index),
+														   (double)effectiveness(0 + 3, i + actuator_start_index),
+														   (double)effectiveness(1 + 3, i + actuator_start_index),
+														   (double)effectiveness(2 + 3, i + actuator_start_index));
+		}
+	}
+
+	// 调试输出
+	PX4_INFO("The total Effectiveness Matrix:");
+	for (int j = 0; j < 6; j++) {
+		PX4_INFO("%.2f, %.2f, %.2f, %.2f, %.2f, %.2f", (double)effectiveness(j, 0 + actuator_start_index),
+														   (double)effectiveness(j, 1 + actuator_start_index),
+														   (double)effectiveness(j, 2 + actuator_start_index),
+														   (double)effectiveness(j, 3 + actuator_start_index),
+														   (double)effectiveness(j, 4 + actuator_start_index),
+														   (double)effectiveness(j, 5 + actuator_start_index));
 	}
 
 	return num_actuators;		// 理论上应为 geometry.num_rotors
@@ -317,6 +361,6 @@ ActuatorEffectivenessRotors::getEffectivenessMatrix(Configuration &configuration
 	if (external_update == EffectivenessUpdateReason::NO_EXTERNAL_UPDATE) {
 		return false;
 	}
-
+	PX4_INFO("[Rotors] Configuration after adding actuators: Selected Matrix %d", configuration.selected_matrix);
 	return addActuators(configuration);
 }
