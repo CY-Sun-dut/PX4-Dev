@@ -50,7 +50,10 @@ ActuatorEffectivenessMultirotor::getEffectivenessMatrix(Configuration &configura
 	}
 
 	// Motors
+	PX4_INFO("[Multirotor] Configuration: Selected Matrix %d", configuration.selected_matrix);
 	const bool rotors_added_successfully = _mc_rotors.addActuators(configuration);
+	PX4_INFO("[Multirotor] Configuration after adding actuators: Selected Matrix %d", configuration.selected_matrix);
+
 
 	return rotors_added_successfully;
 }

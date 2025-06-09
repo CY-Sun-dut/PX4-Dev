@@ -274,6 +274,10 @@ MavlinkReceiver::handle_message(mavlink_message_t *msg)
 		handle_message_statustext(msg);
 		break;
 
+	case MAVLINK_MSG_ID_MAVLINK_UORB:				// 增加自定义消息处理分支
+		handle_message_mavlink_uorb_rx(msg);
+		break;
+
 #if !defined(CONSTRAINED_FLASH)
 
 	case MAVLINK_MSG_ID_NAMED_VALUE_FLOAT:
@@ -2048,7 +2052,7 @@ MavlinkReceiver::handle_message_manual_control(mavlink_message_t *msg)
 	}
 
 	manual_control_setpoint_s manual_control_setpoint{};
-	manual_control_setpoint.pitch = mavlink_manual_control.x / 1000.f;
+	manual_control_setpoint.pitch = mavlink_manual_control.x / 1000.f;		// [-1, 1]
 	manual_control_setpoint.roll = mavlink_manual_control.y / 1000.f;
 	// For backwards compatibility at the moment interpret throttle in range [0,1000]
 	manual_control_setpoint.throttle = ((mavlink_manual_control.z / 1000.f) * 2.f) - 1.f;
@@ -3057,6 +3061,19 @@ MavlinkReceiver::handle_message_gimbal_device_attitude_status(mavlink_message_t 
 	gimbal_attitude_status.received_from_mavlink = true;
 
 	_gimbal_device_attitude_status_pub.publish(gimbal_attitude_status);
+}
+
+// 用户自定义用于处理 MAVLink 消息的函数
+void MavlinkReceiver::handle_message_mavlink_uorb_rx(mavlink_message_t *msg)
+{
+	mavlink_mavlink_uorb_t mavlink_mavlink_uorb;
+	mavlink_msg_mavlink_uorb_decode(msg, &mavlink_mavlink_uorb);		// 消息解码
+	mavlink_uorb_rx_s mavlink_uorb_rx_msg{};	// 消息结构体
+	mavlink_uorb_rx_msg.timestamp = hrt_absolute_time();				// 时间戳
+	mavlink_uorb_rx_msg.accel[0] = mavlink_mavlink_uorb.accel0;			// 数据映射
+	mavlink_uorb_rx_msg.accel[1] = mavlink_mavlink_uorb.accel1;
+	mavlink_uorb_rx_msg.accel[2] = mavlink_mavlink_uorb.accel2;
+	_mavlink_uorb_rx_pub.publish(mavlink_uorb_rx_msg);					// 发布消息
 }
 
 void

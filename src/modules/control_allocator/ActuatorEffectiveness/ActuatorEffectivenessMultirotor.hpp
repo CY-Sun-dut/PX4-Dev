@@ -57,5 +57,5 @@ public:
 	const char *name() const override { return "Multirotor"; }
 
 protected:
-	ActuatorEffectivenessRotors _mc_rotors;
+	ActuatorEffectivenessRotors _mc_rotors;			// 多旋翼电机组的执行机构效率计算类
 };

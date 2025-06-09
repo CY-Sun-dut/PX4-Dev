@@ -40,6 +40,7 @@
  */
 
 #include "ControlAllocationPseudoInverse.hpp"
+#include <px4_platform_common/log.h>
 
 void
 ControlAllocationPseudoInverse::setEffectivenessMatrix(
@@ -66,6 +67,7 @@ ControlAllocationPseudoInverse::updatePseudoInverse()
 
 		normalizeControlAllocationMatrix();
 		_mix_update_needed = false;
+		PX4_INFO("Test Update");
 	}
 }
 
@@ -130,6 +132,7 @@ ControlAllocationPseudoInverse::updateControlAllocationMatrixScale()
 			}
 		}
 
+		// 按 Allocation Matrix 的列取均值归一化（仅计算非零值）
 		if (num_non_zero_thrust > 0) {
 			_control_allocation_scale(3 + axis_idx) = norm_sum / num_non_zero_thrust;
 
@@ -143,7 +146,7 @@ void
 ControlAllocationPseudoInverse::normalizeControlAllocationMatrix()
 {
 	if (_control_allocation_scale(0) > FLT_EPSILON) {
-		_mix.col(0) /= _control_allocation_scale(0);
+		_mix.col(0) /= _control_allocation_scale(0);		// roll 与 pitch 轴归一化参数相同
 		_mix.col(1) /= _control_allocation_scale(1);
 	}
 
@@ -156,6 +159,8 @@ ControlAllocationPseudoInverse::normalizeControlAllocationMatrix()
 		_mix.col(4) /= _control_allocation_scale(4);
 		_mix.col(5) /= _control_allocation_scale(5);
 	}
+
+	// 归一化后的分配矩阵 列非零元的均值为 1 （若机型对称，元素也为1）
 
 	// Set all the small elements to 0 to avoid issues
 	// in the control allocation algorithms
@@ -177,5 +182,5 @@ ControlAllocationPseudoInverse::allocate()
 	_prev_actuator_sp = _actuator_sp;
 
 	// Allocate
-	_actuator_sp = _actuator_trim + _mix * (_control_sp - _control_trim);
+	_actuator_sp = _actuator_trim + _mix * (_control_sp - _control_trim);		// 从控制器到执行机构的映射
 }

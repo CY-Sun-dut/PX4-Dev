@@ -12,6 +12,7 @@
 
 param set-default CA_AIRFRAME 0
 
+param set-default CA_AIRCRAFT_MD 0
 param set-default CA_ROTOR_COUNT 4
 param set-default CA_ROTOR0_PX 0.1515
 param set-default CA_ROTOR0_PY 0.245

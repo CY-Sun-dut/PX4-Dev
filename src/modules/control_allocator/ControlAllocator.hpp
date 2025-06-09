@@ -77,6 +77,8 @@
 #include <uORB/topics/vehicle_thrust_setpoint.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/failure_detector_status.h>
+#include <uORB/topics/manual_control_setpoint.h>
+#include <uORB/topics/vehicle_command.h>
 
 class ControlAllocator : public ModuleBase<ControlAllocator>, public ModuleParams, public px4::ScheduledWorkItem
 {
@@ -166,7 +168,8 @@ private:
 	ActuatorEffectiveness *_actuator_effectiveness{nullptr}; 	///< class providing actuator effectiveness
 
 	uint8_t _control_allocation_selection_indexes[NUM_ACTUATORS * ActuatorEffectiveness::MAX_NUM_MATRICES] {};
-	int _num_actuators[(int)ActuatorType::COUNT] {};
+	int _num_actuators[(int)ActuatorType::COUNT] {};		// 每一类执行机构的数量
+	// COUNT 用来表明执行器类别数
 
 	// Inputs
 	uORB::SubscriptionCallbackWorkItem _vehicle_torque_setpoint_sub{this, ORB_ID(vehicle_torque_setpoint)};  /**< vehicle torque setpoint subscription */
@@ -174,6 +177,7 @@ private:
 
 	uORB::Subscription _vehicle_torque_setpoint1_sub{ORB_ID(vehicle_torque_setpoint), 1};  /**< vehicle torque setpoint subscription (2. instance) */
 	uORB::Subscription _vehicle_thrust_setpoint1_sub{ORB_ID(vehicle_thrust_setpoint), 1};	 /**< vehicle thrust setpoint subscription (2. instance) */
+	// 订阅的另一组实例
 
 	// Outputs
 	uORB::PublicationMulti<control_allocator_status_s> _control_allocator_status_pub[2] {ORB_ID(control_allocator_status), ORB_ID(control_allocator_status)};
@@ -209,7 +213,33 @@ private:
 		(ParamInt<px4::params::CA_AIRFRAME>) _param_ca_airframe,
 		(ParamInt<px4::params::CA_METHOD>) _param_ca_method,
 		(ParamInt<px4::params::CA_FAILURE_MODE>) _param_ca_failure_mode,
-		(ParamInt<px4::params::CA_R_REV>) _param_r_rev
+		(ParamInt<px4::params::CA_R_REV>) _param_r_rev,
+		(ParamInt<px4::params::CA_AIRCRAFT_MD>) _param_ca_aircraft_mode			// 新增区分飞行器模式标志
 	)
+
+	/******************** 用户自定义部分 *******************/
+	// 飞行模式标志
+	enum class AircraftMode {
+		MULTIROTOR = 0,
+		BOAT
+	};
+
+	// 订阅手动控制消息
+	uORB::SubscriptionCallbackWorkItem _manual_control_setpoint_sub{this, ORB_ID(manual_control_input)};
+	uORB::Subscription _vehicle_commands_sub{ORB_ID(vehicle_command)};
+	float manual_control_pitch = 0.f;
+	float manual_control_roll = 0.f;
+	float manual_control_throttle = 0.f;
+	float manual_control_yaw = 0.f;
+
+	enum class BoatMode {
+		DIFF = 1,				// 差速
+		DIRECT = 2				// 方向摇杆
+	};
+
+	uint8_t boat_mode = (int)BoatMode::DIFF;	// 设置船驱动模式 默认为1
+
+	// 调试用
+	uint64_t _debug_counter{0};
 
 };
